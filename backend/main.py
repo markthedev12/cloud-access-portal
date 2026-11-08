@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-import hashlib
+from sqlalchemy.exc import IntegrityError
+from backend.security import hash_password
 
 from backend.database import get_db
 from backend.models import User
@@ -11,11 +12,6 @@ app = FastAPI(
     description="An internal developer portal for secure IAM and cloud access requests.",
     version="1.0.0"
 )
-
-# Simple helper function to hash passwords for now 
-# (We'll upgrade this to bcrypt/Passlib later!)
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
 
 @app.get("/")
 def read_root():
@@ -45,7 +41,11 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     
     # 3. Add to session, commit to database, and refresh
     db.add(new_user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Email already registered in the CloudAccess Portal")
     db.refresh(new_user)
     
     return new_user
